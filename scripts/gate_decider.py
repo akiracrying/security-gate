@@ -269,28 +269,40 @@ def main() -> int:
     stage = args.stage or get_stage()
     all_findings: list[Finding] = []
 
+    def _fsize(p: Path) -> str:
+        try:
+            return f"{p.stat().st_size} bytes"
+        except Exception:
+            return "?"
+
     if args.gitleaks:
-        print(f"::debug::gitleaks path={args.gitleaks}, exists={args.gitleaks.exists()}", flush=True)
-        if args.gitleaks.exists():
+        exists = args.gitleaks.exists()
+        print(f"::notice::gitleaks report: {args.gitleaks} exists={exists} size={_fsize(args.gitleaks) if exists else 'N/A'}", flush=True)
+        if exists:
             gl = parse_gitleaks(args.gitleaks)
-            print(f"::debug::gitleaks parsed {len(gl)} findings", flush=True)
+            print(f"::notice::gitleaks parsed: {len(gl)} findings", flush=True)
             all_findings.extend(gl)
     for p in args.sarif:
         if p.exists():
             sf = parse_sarif(p)
-            print(f"::debug::sarif {p} parsed {len(sf)} findings", flush=True)
+            print(f"::notice::sarif {p.name}: {len(sf)} findings ({_fsize(p)})", flush=True)
             all_findings.extend(sf)
     for trivy_path in args.trivy or []:
         if trivy_path and trivy_path.exists():
             tf = parse_trivy(trivy_path)
-            print(f"::debug::trivy {trivy_path} parsed {len(tf)} findings", flush=True)
+            print(f"::notice::trivy {trivy_path.name}: {len(tf)} findings ({_fsize(trivy_path)})", flush=True)
             all_findings.extend(tf)
     if args.depcheck:
-        print(f"::debug::depcheck path={args.depcheck}, exists={args.depcheck.exists()}", flush=True)
-        if args.depcheck.exists():
+        exists = args.depcheck.exists()
+        print(f"::notice::depcheck report: {args.depcheck} exists={exists} size={_fsize(args.depcheck) if exists else 'N/A'}", flush=True)
+        if exists:
             dc = parse_dependency_check(args.depcheck)
-            print(f"::debug::depcheck parsed {len(dc)} findings", flush=True)
+            print(f"::notice::depcheck parsed: {len(dc)} findings", flush=True)
             all_findings.extend(dc)
+        else:
+            import glob as _g
+            candidates = _g.glob("reports/*dependency*") + _g.glob("reports/*security*")
+            print(f"::notice::depcheck file not found; candidates in reports/: {candidates}", flush=True)
 
     decisions: list[tuple[Finding, str, bool]] = []
     for f in all_findings:

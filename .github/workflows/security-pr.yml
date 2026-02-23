@@ -24,18 +24,25 @@ jobs:
       - name: Gitleaks
         id: gitleaks
         run: |
+          set +e
           GITLEAKS_VER=$(curl -sSfL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r .tag_name)
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VER}/gitleaks_${GITLEAKS_VER#v}_linux_x64.tar.gz" | tar -xz -C /tmp
-          /tmp/gitleaks detect --source . --no-git --config security/gitleaks.toml --report-format json --report-path reports/gitleaks.json || true
-          if [ ! -f reports/gitleaks.json ]; then
-            echo '{"Findings":[]}' > reports/gitleaks.json
+          /tmp/gitleaks detect --source . --no-git --config security/gitleaks.toml --report-format json --report-path reports/gitleaks.json
+          GL_EXIT=$?
+          echo "::notice::Gitleaks exit code: $GL_EXIT"
+          if [ -f reports/gitleaks.json ]; then
+            echo "::notice::Gitleaks report size: $(wc -c < reports/gitleaks.json) bytes"
+          else
+            echo "::warning::Gitleaks report NOT created — writing empty array"
+            echo '[]' > reports/gitleaks.json
           fi
+          exit 0
 
       # --- SAST: Semgrep (warn by default, latest) ---
       - name: Semgrep
         continue-on-error: true
         run: |
-          pip install --upgrade semgrep -q
+          python3 -m pip install --upgrade semgrep -q 2>/dev/null || pip install --upgrade semgrep -q 2>/dev/null || pipx install semgrep 2>/dev/null || true
           semgrep scan --config auto --config security/semgrep.yml --sarif --output reports/semgrep.sarif . 2>/dev/null || true
           [ ! -f reports/semgrep.sarif ] && echo '{"runs":[]}' > reports/semgrep.sarif
         working-directory: ${{ github.workspace }}
