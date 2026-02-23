@@ -1,2 +1,3 @@
-# Synthetic secret for gate demo only (allowlisted in security/gitleaks.toml too).
-demo/juice-shop-master/demo/FAKE_SECRET.txt
+# Use security/gitleaks.toml [allowlist] paths for path-based ignores.
+# .gitleaksignore expects fingerprint hashes (from report), not paths.
+# FAKE_SECRET is allowlisted in security/gitleaks.toml.

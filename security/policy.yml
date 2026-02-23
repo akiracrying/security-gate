@@ -32,6 +32,6 @@ stages:
       other: warn
 
 exceptions:
-  allowed_tools: [trivy, semgrep, codeql]
+  allowed_tools: [trivy, semgrep, codeql, dependency-check]
   never_for_secrets: true
   expired_means_block: true

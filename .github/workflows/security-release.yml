@@ -43,7 +43,7 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: "/security-release"
-          upload: fasle # true
+          upload: true
           output: reports
 
       # --- SCA: Trivy FS (block CRITICAL/HIGH with fix on release) ---
@@ -51,16 +51,27 @@ jobs:
         run: |
           curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /tmp
           /tmp/trivy fs --severity CRITICAL,HIGH --format json --output reports/trivy.json . 2>/dev/null || true
-          if [ ! -f reports/trivy.json ]; then
-            echo '{"Results":[]}' > reports/trivy.json
+          if [ -d demo/juice-shop-master ]; then
+            /tmp/trivy fs --severity CRITICAL,HIGH,MEDIUM --format json --output reports/trivy-juiceshop.json demo/juice-shop-master 2>/dev/null || true
           fi
+          [ ! -f reports/trivy.json ] && echo '{"Results":[]}' > reports/trivy.json
         working-directory: ${{ github.workspace }}
+
+      - name: OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@main
+        continue-on-error: true
+        with:
+          project: 'security-gate'
+          path: 'demo/juice-shop-master'
+          format: 'JSON'
+          out: 'reports'
+          args: '--failOnCVSS 0'
 
       - name: Upload Trivy report
         uses: actions/upload-artifact@v4
         with:
           name: trivy-release-json
-          path: reports/trivy.json
+          path: reports/
 
       # --- Container scan (if Dockerfile present) ---
       - name: Build image for scan
@@ -92,10 +103,14 @@ jobs:
           pip install pyyaml -q
           SARIF_ARGS=""
           for f in reports/*.sarif; do [ -f "$f" ] && SARIF_ARGS="$SARIF_ARGS --sarif $f"; done
+          TRIVY_ARGS="--trivy reports/trivy.json"
+          [ -f reports/trivy-image.json ] && TRIVY_ARGS="$TRIVY_ARGS --trivy reports/trivy-image.json"
+          [ -f reports/trivy-juiceshop.json ] && TRIVY_ARGS="$TRIVY_ARGS --trivy reports/trivy-juiceshop.json"
           python scripts/gate_decider.py \
             --gitleaks reports/gitleaks.json \
             $SARIF_ARGS \
-            --trivy reports/trivy.json \
+            $TRIVY_ARGS \
+            --depcheck reports/dependency-check-report.json \
             --stage release \
             --policy security/policy.yml \
             --exceptions security/exceptions.yml \

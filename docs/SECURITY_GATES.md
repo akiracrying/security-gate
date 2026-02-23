@@ -16,7 +16,8 @@ This document describes the security gates pipeline for the repository: stages, 
 | **Secrets** | Gitleaks | block on any finding | block on any finding |
 | **SAST** | CodeQL | — | block on high/critical |
 | **SAST** | Semgrep | warn (optional; high-confidence in changed files can block) | — |
-| **SCA** | Trivy FS / OSV-Scanner | warn | block CRITICAL/HIGH runtime with fix |
+| **SCA** | Trivy FS / image | warn | block CRITICAL/HIGH runtime with fix |
+| **SCA** | OWASP Dependency-Check | — | warn / block (same policy as Trivy) |
 | **Dependencies** | dependency-review-action | warn / block on new critical/high | — |
 | **Container** | Trivy image | warn (if image built) | block CRITICAL/HIGH with fix |
 

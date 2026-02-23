@@ -63,14 +63,17 @@ def normalize_severity(s: str) -> str:
 def parse_gitleaks(path: Path) -> list[Finding]:
     findings = []
     data = load_json(path)
-    for r in data.get("Findings", data) if isinstance(data, dict) else (data or []):
+    raw_list = data.get("Findings", data.get("findings", data)) if isinstance(data, dict) else (data or [])
+    if not isinstance(raw_list, list):
+        raw_list = []
+    for r in raw_list:
         rule = r.get("RuleID", "gitleaks")
         findings.append(
             Finding(
                 tool="gitleaks",
                 rule_id=rule,
                 severity="high",
-                path=r.get("File", r.get("SourceMetadata", {}).get("Data", {}).get("File", "")),
+                path=r.get("File", r.get("SourceMetadata", {}).get("Data", {}).get("File", r.get("file", ""))),
                 message=r.get("Description", "Secret detected"),
                 fix_available=False,
                 in_changed_files=True,
@@ -108,6 +111,28 @@ def parse_sarif(path: Path) -> list[Finding]:
                     fix_available=False,
                     in_changed_files=True,
                     raw=result,
+                )
+            )
+    return findings
+
+
+def parse_dependency_check(path: Path) -> list[Finding]:
+    findings = []
+    data = load_json(path)
+    for dep in data.get("dependencies", []):
+        for vuln in dep.get("vulnerabilities", []) or []:
+            sev = normalize_severity(vuln.get("severity", "medium"))
+            name = vuln.get("name", vuln.get("cve", "CVE-?"))
+            findings.append(
+                Finding(
+                    tool="dependency-check",
+                    rule_id=name,
+                    severity=sev,
+                    path=dep.get("fileName", path.name),
+                    message=vuln.get("description", name)[:200],
+                    fix_available=bool(dep.get("evidenceCollected", {}).get("versionEvidence")),
+                    in_changed_files=True,
+                    raw=vuln,
                 )
             )
     return findings
@@ -164,7 +189,7 @@ def policy_decision(finding: Finding, stage: str, policy: dict) -> str:
             return sast.get("high_critical", "block")
         return sast.get("medium_low", "warn")
 
-    if tool == "trivy":
+    if tool in ("trivy", "dependency-check"):
         sca = stage_policy.get("sca") or {}
         if stage == "pr":
             return sca.get("any", "warn")
@@ -217,7 +242,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Gate decider: normalize findings and output allow/warn/block")
     ap.add_argument("--gitleaks", type=Path, help="gitleaks JSON report")
     ap.add_argument("--sarif", type=Path, action="append", default=[], help="SARIF report (CodeQL/Semgrep)")
-    ap.add_argument("--trivy", type=Path, help="Trivy JSON report")
+    ap.add_argument("--trivy", type=Path, action="append", default=[], help="Trivy JSON report(s) (FS + image)")
+    ap.add_argument("--depcheck", type=Path, help="OWASP Dependency-Check JSON report")
     ap.add_argument("--policy", type=Path, default=Path("security/policy.yml"))
     ap.add_argument("--exceptions", type=Path, default=Path("security/exceptions.yml"))
     ap.add_argument("--stage", choices=("pr", "release"), default=None, help="Override stage (default: from env)")
@@ -245,8 +271,11 @@ def main() -> int:
     for p in args.sarif:
         if p.exists():
             all_findings.extend(parse_sarif(p))
-    if args.trivy and args.trivy.exists():
-        all_findings.extend(parse_trivy(args.trivy))
+    for trivy_path in args.trivy or []:
+        if trivy_path and trivy_path.exists():
+            all_findings.extend(parse_trivy(trivy_path))
+    if args.depcheck and args.depcheck.exists():
+        all_findings.extend(parse_dependency_check(args.depcheck))
 
     decisions: list[tuple[Finding, str, bool]] = []
     for f in all_findings:
@@ -258,11 +287,17 @@ def main() -> int:
     warns = [d for d in decisions if d[1] == "warn"]
     allows = [d for d in decisions if d[1] == "allow"]
 
+    by_tool: dict[str, int] = {}
+    for f, _, _ in decisions:
+        by_tool[f.tool] = by_tool.get(f.tool, 0) + 1
+    tools_line = " | ".join(f"**{t}:** {c}" for t, c in sorted(by_tool.items())) if by_tool else "—"
     summary_lines = [
         "# Security gate summary",
         "",
         f"**Stage:** {stage}",
         f"**Allow:** {len(allows)} | **Warn:** {len(warns)} | **Block:** {len(blocks)}",
+        "",
+        "**By tool:** " + tools_line,
         "",
     ]
     if blocks:
