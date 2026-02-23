@@ -27,17 +27,14 @@ jobs:
           set +e
           GITLEAKS_VER=$(curl -sSfL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r .tag_name)
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VER}/gitleaks_${GITLEAKS_VER#v}_linux_x64.tar.gz" | tar -xz -C /tmp
-          /tmp/gitleaks detect --source . --no-git --config security/gitleaks.toml --report-format json --report-path reports/gitleaks.json
+          /tmp/gitleaks detect --source . --no-git --config security/gitleaks.toml --report-format json --report-path /tmp/gitleaks.json
           GL_EXIT=$?
           echo "::notice::Gitleaks exit code: $GL_EXIT"
-          if [ -f reports/gitleaks.json ]; then
-            echo "::notice::Gitleaks report size: $(wc -c < reports/gitleaks.json) bytes"
-            echo "::notice::Gitleaks report first 300 chars:"
-            head -c 300 reports/gitleaks.json
-            echo ""
+          if [ -f /tmp/gitleaks.json ]; then
+            echo "::notice::Gitleaks report size: $(wc -c < /tmp/gitleaks.json) bytes"
           else
             echo "::warning::Gitleaks report NOT created — writing empty array"
-            echo '[]' > reports/gitleaks.json
+            echo '[]' > /tmp/gitleaks.json
           fi
           exit 0
 
@@ -55,6 +52,9 @@ jobs:
           category: "/security-release"
           upload: true
           output: reports
+
+      - name: Restore Gitleaks report
+        run: cp /tmp/gitleaks.json reports/gitleaks.json
 
       # --- SAST: Semgrep (warn) ---
       - name: Semgrep

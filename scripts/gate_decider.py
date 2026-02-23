@@ -121,9 +121,12 @@ def parse_dependency_check(path: Path) -> list[Finding]:
     data = load_json(path)
     deps = data.get("dependencies", data.get("dependency", []))
     if not isinstance(deps, list):
-        deps = []
+        deps = [deps] if isinstance(deps, dict) else []
+    total_vulns = 0
     for dep in deps:
-        for vuln in dep.get("vulnerabilities", []) or []:
+        vulns = dep.get("vulnerabilities", []) or []
+        total_vulns += len(vulns)
+        for vuln in vulns:
             sev = normalize_severity(vuln.get("severity", "medium"))
             name = vuln.get("name", vuln.get("cve", "CVE-?"))
             findings.append(
@@ -138,6 +141,7 @@ def parse_dependency_check(path: Path) -> list[Finding]:
                     raw=vuln,
                 )
             )
+    print(f"::notice::depcheck detail: {len(deps)} deps, {total_vulns} total vulns in JSON", flush=True)
     return findings
 
 
