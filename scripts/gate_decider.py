@@ -269,16 +269,28 @@ def main() -> int:
     stage = args.stage or get_stage()
     all_findings: list[Finding] = []
 
-    if args.gitleaks and args.gitleaks.exists():
-        all_findings.extend(parse_gitleaks(args.gitleaks))
+    if args.gitleaks:
+        print(f"::debug::gitleaks path={args.gitleaks}, exists={args.gitleaks.exists()}", flush=True)
+        if args.gitleaks.exists():
+            gl = parse_gitleaks(args.gitleaks)
+            print(f"::debug::gitleaks parsed {len(gl)} findings", flush=True)
+            all_findings.extend(gl)
     for p in args.sarif:
         if p.exists():
-            all_findings.extend(parse_sarif(p))
+            sf = parse_sarif(p)
+            print(f"::debug::sarif {p} parsed {len(sf)} findings", flush=True)
+            all_findings.extend(sf)
     for trivy_path in args.trivy or []:
         if trivy_path and trivy_path.exists():
-            all_findings.extend(parse_trivy(trivy_path))
-    if args.depcheck and args.depcheck.exists():
-        all_findings.extend(parse_dependency_check(args.depcheck))
+            tf = parse_trivy(trivy_path)
+            print(f"::debug::trivy {trivy_path} parsed {len(tf)} findings", flush=True)
+            all_findings.extend(tf)
+    if args.depcheck:
+        print(f"::debug::depcheck path={args.depcheck}, exists={args.depcheck.exists()}", flush=True)
+        if args.depcheck.exists():
+            dc = parse_dependency_check(args.depcheck)
+            print(f"::debug::depcheck parsed {len(dc)} findings", flush=True)
+            all_findings.extend(dc)
 
     decisions: list[tuple[Finding, str, bool]] = []
     for f in all_findings:

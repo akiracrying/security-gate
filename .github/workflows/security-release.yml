@@ -46,6 +46,15 @@ jobs:
           upload: true
           output: reports
 
+      # --- SAST: Semgrep (warn) ---
+      - name: Semgrep
+        continue-on-error: true
+        run: |
+          pip install --upgrade semgrep -q
+          semgrep scan --config auto --config security/semgrep.yml --sarif --output reports/semgrep.sarif . 2>/dev/null || true
+          [ ! -f reports/semgrep.sarif ] && echo '{"runs":[]}' > reports/semgrep.sarif
+        working-directory: ${{ github.workspace }}
+
       # --- SCA: Trivy FS (block CRITICAL/HIGH with fix on release) ---
       - name: Trivy FS
         run: |
@@ -67,7 +76,9 @@ jobs:
           path: 'demo/juice-shop-master'
           format: 'JSON'
           out: 'reports'
-          args: '--failOnCVSS 0 --exclude "**/test/files/**"'
+          args: >
+            --failOnCVSS 0
+            --exclude "**/test/files/**"
 
       - name: Upload Trivy report
         uses: actions/upload-artifact@v4
@@ -103,6 +114,14 @@ jobs:
           GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
         run: |
           pip install pyyaml -q
+          echo "=== Reports ==="
+          ls -la reports/ || true
+          echo "=== Gitleaks first 5 lines ==="
+          head -c 500 reports/gitleaks.json || true
+          echo ""
+          echo "=== Depcheck files ==="
+          ls -la reports/*dependency* reports/*security* 2>/dev/null || echo "no depcheck report found"
+          echo "==========================="
           SARIF_ARGS=""
           for f in reports/*.sarif; do [ -f "$f" ] && SARIF_ARGS="$SARIF_ARGS --sarif $f"; done
           TRIVY_ARGS="--trivy reports/trivy.json"

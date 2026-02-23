@@ -1,7 +1,9 @@
-# Minimal Gitleaks config — reduce noise, keep high-confidence secret detection
+# Gitleaks config: default rules + custom allowlist + extra rules
 title = "security-gate gitleaks"
-version = "1.0"
-minVersion = "v8.0.0"
+
+[extend]
+# Load all default gitleaks rules (AWS, GCP, GitHub tokens, generic-api-key, etc.)
+useDefault = true
 
 [allowlist]
 description = "Exclude demo/synthetic and common false positives"
@@ -11,16 +13,17 @@ paths = [
   '''package-lock\.json$''',
   '''.*\.min\.js$''',
   '''.*\.snap$''',
-  '''node_modules/'''
+  '''node_modules/''',
+  '''\.git/'''
 ]
 regexes = [
   '''(?i)dummy|example|sample|placeholder|xxx|test|fake'''
 ]
 
-# Only high-signal rules; use default gitleaks for full set or omit custom config
+# Extra custom rule on top of defaults
 [[rules]]
-id = "generic-secret"
-description = "High-entropy generic secret"
+id = "custom-generic-secret"
+description = "High-entropy generic secret (custom)"
 regex = '''(?i)(?:api[_-]?key|apikey|secret|password|passwd|token)\s*[:=]\s*['"]?([a-zA-Z0-9_\-+=/]{20,})['"]?'''
 entropy = 3.5
 keywords = ["api", "secret", "password", "token"]
