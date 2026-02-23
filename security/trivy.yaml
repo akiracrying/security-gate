@@ -1,0 +1,11 @@
+# Trivy config (optional; CLI flags often sufficient)
+# Used for: trivy fs --severity CRITICAL,HIGH --exit-code 1
+severity:
+  - CRITICAL
+  - HIGH
+format: json
+# Ignore unfixed for release gate; handle in policy
+ignore-unfixed: false
+skip-dirs:
+  - node_modules
+  - frontend/node_modules

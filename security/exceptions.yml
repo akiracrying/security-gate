@@ -1,0 +1,20 @@
+# Time-boxed risk acceptance exceptions
+# id, tool, match (CVE or rule id), scope, reason, owner, expires (ISO date)
+# If a finding matches and expires is in the future: block -> warn
+
+- id: example-sca-no-fix
+  tool: trivy
+  match: "CVE-XXXX-XXXXX"
+  scope: "juice-shop-master/package.json"
+  reason: "No fix available; tracked for upgrade"
+  owner: "security-team"
+  expires: "2026-06-01"
+
+# SAST medium/low exceptions only on PR; never for secrets
+# - id: example-sast-medium
+#   tool: semgrep
+#   match: "rule-id"
+#   scope: "repo"
+#   reason: "False positive in test fixture"
+#   owner: "dev-team"
+#   expires: "2026-03-01"

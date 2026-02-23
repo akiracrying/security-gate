@@ -1,0 +1,37 @@
+# Policy matrix: tool output -> decision (allow / warn / block) by stage
+# Stage: pr (pull_request) | release (push main, workflow_dispatch)
+
+stages:
+  pr:
+    secrets:
+      any: block
+    sast:
+      high_critical_high_confidence_in_changed: block
+      high_critical_otherwise: warn
+      medium_low: warn
+    sca:
+      any: warn
+    dependency_review:
+      new_critical_high: block
+      other: warn
+    container:
+      any: warn
+
+  release:
+    secrets:
+      any: block
+    sast:
+      high_critical: block
+      medium_low: warn
+    sca:
+      critical_high_runtime_with_fix: block
+      critical_high_runtime_no_fix: warn
+      dev_test_or_no_fix: warn
+    container:
+      critical_high_with_fix: block
+      other: warn
+
+exceptions:
+  allowed_tools: [trivy, semgrep, codeql]
+  never_for_secrets: true
+  expired_means_block: true

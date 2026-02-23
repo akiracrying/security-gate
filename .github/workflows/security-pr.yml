@@ -1,0 +1,87 @@
+# Security gates — PR stage: fast feedback, minimal blocking
+name: Security (PR)
+on:
+  pull_request:
+    branches: [main, master]
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: read
+
+jobs:
+  security-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create reports dir
+        run: mkdir -p reports
+
+      # --- Secrets: report only; block decision in gate_decider (gitleaks latest) ---
+      - name: Gitleaks
+        id: gitleaks
+        run: |
+          GITLEAKS_VER=$(curl -sSfL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r .tag_name)
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VER}/gitleaks_${GITLEAKS_VER#v}_linux_x64.tar.gz" | tar -xz -C /tmp
+          /tmp/gitleaks detect --source . --no-git --config security/gitleaks.toml --report-format json --report-path reports/gitleaks.json || true
+          if [ ! -f reports/gitleaks.json ]; then
+            echo '{"Findings":[]}' > reports/gitleaks.json
+          fi
+
+      # --- SAST: Semgrep (warn by default, latest) ---
+      - name: Semgrep
+        continue-on-error: true
+        run: |
+          pip install --upgrade semgrep -q
+          semgrep scan --config auto --config security/semgrep.yml --output format=sarif --output reports/semgrep.sarif . 2>/dev/null || true
+          [ ! -f reports/semgrep.sarif ] && echo '{"runs":[]}' > reports/semgrep.sarif
+        working-directory: ${{ github.workspace }}
+
+      - name: Upload Semgrep SARIF
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-sarif
+          path: reports/semgrep.sarif
+
+      # --- SCA: warn only on PR (Trivy latest) ---
+      - name: Trivy FS (SCA)
+        continue-on-error: true
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /tmp
+          /tmp/trivy fs --severity CRITICAL,HIGH,MEDIUM --format json --output reports/trivy.json . 2>/dev/null || true
+          [ ! -f reports/trivy.json ] && echo '{"Results":[]}' > reports/trivy.json
+        working-directory: ${{ github.workspace }}
+
+      - name: Upload Trivy report
+        if: always() && hashFiles('reports/trivy.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-json
+          path: reports/trivy.json
+
+      # --- Dependency review ---
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        continue-on-error: true
+        with:
+          fail-on-severity: high
+          deny-licenses: []
+
+      # --- Gate decider: summary; exit 0 = allow/warn, exit 1 = block (job fails only here) ---
+      - name: Gate decider
+        id: gate
+        env:
+          GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
+        run: |
+          pip install pyyaml -q
+          python scripts/gate_decider.py \
+            --gitleaks reports/gitleaks.json \
+            --sarif reports/semgrep.sarif \
+            --trivy reports/trivy.json \
+            --stage pr \
+            --export-latex docs/policy_mapping_table.tex
+        working-directory: ${{ github.workspace }}

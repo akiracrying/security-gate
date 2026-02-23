@@ -1,0 +1,15 @@
+# Semgrep config for PR-stage SAST (warn by default; limited block ruleset)
+# Use with: semgrep scan --config . --output format=sarif --output semgrep.sarif
+rules:
+  - id: eqeq-is-bad
+    pattern: $X == $X
+    message: "Suspicious equality check (always true)"
+    severity: WARNING
+    languages: [javascript, typescript]
+  - id: sql-injection
+    pattern-either:
+      - pattern: $QUERY = $CONN.query(...)
+      - pattern: $CONN.query($SQL + ...)
+    message: "Potential SQL concatenation / injection"
+    severity: ERROR
+    languages: [javascript, typescript]

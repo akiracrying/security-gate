@@ -1,0 +1,8 @@
+[
+  {"tool": "gitleaks", "rule_id": "generic-secret", "severity": "high", "path": "config.env", "message": "Secret detected", "decision": "Block"},
+  {"tool": "codeql", "rule_id": "js/sql-injection", "severity": "high", "path": "lib/db.js", "message": "SQL injection", "decision": "Block"},
+  {"tool": "semgrep", "rule_id": "eqeq-is-bad", "severity": "medium", "path": "frontend/src/app.ts", "message": "Suspicious equality", "decision": "Warn"},
+  {"tool": "trivy", "rule_id": "CVE-2024-1234", "severity": "critical", "path": "package-lock.json", "message": "lodash prototype pollution", "fix_available": true, "decision": "Block (release)"},
+  {"tool": "trivy", "rule_id": "CVE-2024-5678", "severity": "high", "path": "devDependencies", "message": "No fix", "fix_available": false, "decision": "Warn+exception"},
+  {"tool": "dependency-review", "rule_id": "new-high", "severity": "high", "path": "package.json", "message": "New dependency with known HIGH", "decision": "Block (PR)"}
+]

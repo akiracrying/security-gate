@@ -1,0 +1,103 @@
+# Security gates — Release/main stage: strict blocking
+name: Security (Release)
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  security-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create reports dir
+        run: mkdir -p reports
+
+      # --- Secrets: block on any (gitleaks latest) ---
+      - name: Gitleaks
+        run: |
+          GITLEAKS_VER=$(curl -sSfL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r .tag_name)
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VER}/gitleaks_${GITLEAKS_VER#v}_linux_x64.tar.gz" | tar -xz -C /tmp
+          /tmp/gitleaks detect --source . --no-git --config security/gitleaks.toml --report-format json --report-path reports/gitleaks.json || true
+          if [ ! -f reports/gitleaks.json ]; then
+            echo '{"Findings":[]}' > reports/gitleaks.json
+          fi
+
+      # --- SAST: CodeQL (block high/critical) ---
+      - name: Init CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript, typescript
+          queries: security-extended
+
+      - name: Run CodeQL
+        id: codeql
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/security-release"
+          upload: true
+          output: reports
+          severity: error
+
+      # --- SCA: Trivy FS (block CRITICAL/HIGH with fix on release) ---
+      - name: Trivy FS
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /tmp
+          /tmp/trivy fs --severity CRITICAL,HIGH --format json --output reports/trivy.json . 2>/dev/null || true
+          if [ ! -f reports/trivy.json ]; then
+            echo '{"Results":[]}' > reports/trivy.json
+          fi
+        working-directory: ${{ github.workspace }}
+
+      - name: Upload Trivy report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-release-json
+          path: reports/trivy.json
+
+      # --- Container scan (if Dockerfile present) ---
+      - name: Build image for scan
+        id: build
+        run: |
+          if [ -f juice-shop-master/Dockerfile ] || [ -f Dockerfile ]; then
+            docker build -t juice-shop-scan:local -f juice-shop-master/Dockerfile juice-shop-master 2>/dev/null || docker build -t juice-shop-scan:local . 2>/dev/null || true
+            echo "built=1" >> $GITHUB_OUTPUT
+          else
+            echo "built=0" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+
+      - name: Trivy image scan
+        if: steps.build.outputs.built == '1'
+        run: |
+          /tmp/trivy image --severity CRITICAL,HIGH --format json --output reports/trivy-image.json juice-shop-scan:local 2>/dev/null || true
+          if [ ! -f reports/trivy-image.json ]; then
+            echo '{"Results":[]}' > reports/trivy-image.json
+          fi
+        continue-on-error: true
+
+      # --- Gate decider: uses policy for release; exit 1 = block ---
+      - name: Gate decider
+        id: gate
+        env:
+          GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
+        run: |
+          pip install pyyaml -q
+          SARIF_ARGS=""
+          for f in reports/*.sarif; do [ -f "$f" ] && SARIF_ARGS="$SARIF_ARGS --sarif $f"; done
+          python scripts/gate_decider.py \
+            --gitleaks reports/gitleaks.json \
+            $SARIF_ARGS \
+            --trivy reports/trivy.json \
+            --stage release \
+            --policy security/policy.yml \
+            --exceptions security/exceptions.yml \
+            --export-latex docs/policy_mapping_table.tex
+        working-directory: ${{ github.workspace }}
