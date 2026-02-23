@@ -7,6 +7,7 @@ on:
 permissions:
   contents: read
   security-events: write
+  actions: read
 
 jobs:
   security-release:
@@ -44,7 +45,6 @@ jobs:
           category: "/security-release"
           upload: true
           output: reports
-          severity: error
 
       # --- SCA: Trivy FS (block CRITICAL/HIGH with fix on release) ---
       - name: Trivy FS
