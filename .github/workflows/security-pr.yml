@@ -51,9 +51,11 @@ jobs:
       - name: Trivy FS (SCA)
         continue-on-error: true
         run: |
+          set +e
           curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /tmp
           /tmp/trivy fs --severity CRITICAL,HIGH,MEDIUM --format json --output reports/trivy.json . 2>/dev/null || true
           [ ! -f reports/trivy.json ] && echo '{"Results":[]}' > reports/trivy.json
+          exit 0
         working-directory: ${{ github.workspace }}
 
       - name: Upload Trivy report

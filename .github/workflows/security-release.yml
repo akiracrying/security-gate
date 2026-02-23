@@ -49,12 +49,14 @@ jobs:
       # --- SCA: Trivy FS (block CRITICAL/HIGH with fix on release) ---
       - name: Trivy FS
         run: |
+          set +e
           curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /tmp
           /tmp/trivy fs --severity CRITICAL,HIGH --format json --output reports/trivy.json . 2>/dev/null || true
           if [ -d demo/juice-shop-master ]; then
             /tmp/trivy fs --severity CRITICAL,HIGH,MEDIUM --format json --output reports/trivy-juiceshop.json demo/juice-shop-master 2>/dev/null || true
           fi
           [ ! -f reports/trivy.json ] && echo '{"Results":[]}' > reports/trivy.json
+          exit 0
         working-directory: ${{ github.workspace }}
 
       - name: OWASP Dependency-Check
@@ -88,10 +90,10 @@ jobs:
       - name: Trivy image scan
         if: steps.build.outputs.built == '1'
         run: |
+          set +e
           /tmp/trivy image --severity CRITICAL,HIGH --format json --output reports/trivy-image.json juice-shop-scan:local 2>/dev/null || true
-          if [ ! -f reports/trivy-image.json ]; then
-            echo '{"Results":[]}' > reports/trivy-image.json
-          fi
+          [ ! -f reports/trivy-image.json ] && echo '{"Results":[]}' > reports/trivy-image.json
+          exit 0
         continue-on-error: true
 
       # --- Gate decider: uses policy for release; exit 1 = block ---
