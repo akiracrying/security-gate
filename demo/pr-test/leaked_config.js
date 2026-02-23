@@ -1,10 +1,10 @@
 // Intentionally vulnerable file for PR gate demo
-// This file contains a synthetic AWS key to trigger Gitleaks (verified pattern)
+// Contains synthetic secrets to trigger Gitleaks verified patterns
 
 const config = {
   region: "us-east-1",
-  accessKeyId: "AKIAIOSFODNN7EXAMPLE",
-  secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+  accessKeyId: "AKIAQZ7F9XJRTLBGD4K2",
+  secretAccessKey: "rN8jKtLmP3vQwXyZ5bCdEfGhIjKlMnOpQrStUvWx",
 };
 
 module.exports = config;

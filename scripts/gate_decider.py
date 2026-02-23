@@ -445,7 +445,12 @@ def main() -> int:
 
     def _gh_link(f: Finding) -> str:
         p = (f.path or "").replace("|", "/")
-        if not base_url or not p or p.startswith("http") or "/" not in p:
+        is_repo_file = (
+            base_url and p and "/" in p
+            and not p.startswith("http")
+            and not p.startswith("reports/")
+        )
+        if not is_repo_file:
             return p[:70] + ("…" if len(p) > 70 else "")
         short = p[:60] + ("…" if len(p) > 60 else "")
         anchor = f"#L{f.line}" if f.line else ""
