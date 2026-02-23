@@ -66,8 +66,8 @@ jobs:
       - name: Build image for scan
         id: build
         run: |
-          if [ -f juice-shop-master/Dockerfile ] || [ -f Dockerfile ]; then
-            docker build -t juice-shop-scan:local -f juice-shop-master/Dockerfile juice-shop-master 2>/dev/null || docker build -t juice-shop-scan:local . 2>/dev/null || true
+          if [ -f demo/juice-shop-master/Dockerfile ] || [ -f Dockerfile ]; then
+            docker build -t juice-shop-scan:local -f demo/juice-shop-master/Dockerfile demo/juice-shop-master 2>/dev/null || docker build -t juice-shop-scan:local . 2>/dev/null || true
             echo "built=1" >> $GITHUB_OUTPUT
           else
             echo "built=0" >> $GITHUB_OUTPUT

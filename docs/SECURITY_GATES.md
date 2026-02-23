@@ -45,7 +45,7 @@ If a finding matches an exception and `expires` is in the future: **block → wa
 
 ## Demo: Synthetic Secret
 
-The file `juice-shop-master/demo/FAKE_SECRET.txt` is a **synthetic secret for demonstrating gate behavior** only. Real secrets are never allowed. It is allowlisted in `security/gitleaks.toml` and `.gitleaksignore` so that `main` stays clean.
+The file `demo/juice-shop-master/demo/FAKE_SECRET.txt` is a **synthetic secret for demonstrating gate behavior** only. Real secrets are never allowed. It is allowlisted in `security/gitleaks.toml` and `.gitleaksignore` so that `main` stays clean.
 
 ## Pipeline Overview
 

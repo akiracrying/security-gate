@@ -1,2 +1,2 @@
 # Synthetic secret for gate demo only (allowlisted in security/gitleaks.toml too).
-juice-shop-master/demo/FAKE_SECRET.txt
+demo/juice-shop-master/demo/FAKE_SECRET.txt

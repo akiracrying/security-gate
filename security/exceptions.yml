@@ -5,7 +5,7 @@
 - id: example-sca-no-fix
   tool: trivy
   match: "CVE-XXXX-XXXXX"
-  scope: "juice-shop-master/package.json"
+  scope: "demo/juice-shop-master/package.json"
   reason: "No fix available; tracked for upgrade"
   owner: "security-team"
   expires: "2026-06-01"

@@ -69,7 +69,6 @@ jobs:
         continue-on-error: true
         with:
           fail-on-severity: high
-          deny-licenses: []
 
       # --- Gate decider: summary; exit 0 = allow/warn, exit 1 = block (job fails only here) ---
       - name: Gate decider

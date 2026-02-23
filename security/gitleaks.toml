@@ -6,7 +6,7 @@ minVersion = "v8.0.0"
 [allowlist]
 description = "Exclude demo/synthetic and common false positives"
 paths = [
-  '''juice-shop-master/demo/FAKE_SECRET\.txt''',
+  '''demo/juice-shop-master/demo/FAKE_SECRET\.txt''',
   '''.*\.md$''',
   '''package-lock\.json$''',
   '''.*\.min\.js$''',

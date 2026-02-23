@@ -1,1 +1,1 @@
-Synthetic secret for gate demo lives in `juice-shop-master/demo/FAKE_SECRET.txt`.
+Juice Shop lives here as `juice-shop-master/`. Synthetic secret for gate demo: `juice-shop-master/demo/FAKE_SECRET.txt`.
