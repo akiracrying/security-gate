@@ -103,12 +103,6 @@ jobs:
             --failOnCVSS 0
             --exclude "**/test/files/**"
 
-      - name: Upload Trivy report
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-release-json
-          path: reports/
-
       # --- Container scan (if Dockerfile present) ---
       - name: Build image for scan
         id: build
@@ -162,3 +156,10 @@ jobs:
             --exceptions security/exceptions.yml \
             --export-latex docs/policy_mapping_table.tex
         working-directory: ${{ github.workspace }}
+
+      - name: Upload all security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports-release
+          path: reports/
