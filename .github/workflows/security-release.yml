@@ -43,7 +43,7 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: "/security-release"
-          upload: true
+          upload: fasle # true
           output: reports
 
       # --- SCA: Trivy FS (block CRITICAL/HIGH with fix on release) ---
