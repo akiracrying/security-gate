@@ -31,11 +31,26 @@ class Finding:
     line: int = 0
     fix_available: bool = False
     in_changed_files: bool = True
+    confidence: str = "high"  # high (verified pattern) | medium (entropy/generic)
+    dep_scope: str = "unknown"  # runtime | dev | unknown
     raw: dict[str, Any] = field(default_factory=dict)
 
     def severity_order(self) -> int:
         o = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
         return o.get(self.severity.lower(), 5)
+
+
+VERIFIED_SECRET_RULES = frozenset({
+    "aws-access-key-id", "aws-secret-access-key", "github-pat",
+    "github-fine-grained-pat", "github-oauth", "github-app-token",
+    "gitlab-pat", "slack-token", "slack-webhook-url",
+    "google-api-key", "gcp-service-account", "gcp-api-key",
+    "azure-storage-key", "stripe-access-token", "twilio-api-key",
+    "sendgrid-api-token", "npm-access-token", "pypi-upload-token",
+    "private-key", "jwt", "telegram-bot-api-token",
+    "hashicorp-tf-api-token", "heroku-api-key", "databricks-api-token",
+    "shopify-access-token", "discord-api-token", "discord-client-secret",
+})
 
 
 def load_yaml(path: Path) -> dict:
@@ -69,6 +84,7 @@ def parse_gitleaks(path: Path) -> list[Finding]:
         raw_list = []
     for r in raw_list:
         rule = r.get("RuleID", "gitleaks")
+        confidence = "high" if rule in VERIFIED_SECRET_RULES else "medium"
         findings.append(
             Finding(
                 tool="gitleaks",
@@ -79,6 +95,7 @@ def parse_gitleaks(path: Path) -> list[Finding]:
                 line=r.get("StartLine", 0),
                 fix_available=False,
                 in_changed_files=True,
+                confidence=confidence,
                 raw=r,
             )
         )
@@ -149,6 +166,24 @@ def parse_dependency_check(path: Path) -> list[Finding]:
     return findings
 
 
+DEV_TRIVY_CLASSES = frozenset({
+    "devDependencies", "dev", "optional",
+})
+
+
+def _guess_dep_scope(result: dict, vuln: dict) -> str:
+    target = (result.get("Target") or "").lower()
+    cls = (result.get("Class") or "").lower()
+    pkg_path = (vuln.get("PkgPath") or "").lower()
+    if any(d in cls for d in DEV_TRIVY_CLASSES):
+        return "dev"
+    if "devdependencies" in pkg_path or "test" in target or "spec" in target:
+        return "dev"
+    if "node_modules" in target or "package-lock" in target or "yarn.lock" in target:
+        return "runtime"
+    return "unknown"
+
+
 def parse_trivy(path: Path) -> list[Finding]:
     findings = []
     data = load_json(path)
@@ -159,6 +194,7 @@ def parse_trivy(path: Path) -> list[Finding]:
             vid = vuln.get("VulnerabilityID", vuln.get("ID", ""))
             fix = bool(vuln.get("FixedVersion"))
             path_str = result.get("Target", path.name)
+            scope = _guess_dep_scope(result, vuln)
             findings.append(
                 Finding(
                     tool="trivy",
@@ -168,6 +204,7 @@ def parse_trivy(path: Path) -> list[Finding]:
                     message=f"{pkg}: {vuln.get('Title', vid)}",
                     fix_available=fix,
                     in_changed_files=True,
+                    dep_scope=scope,
                     raw=vuln,
                 )
             )
@@ -207,19 +244,36 @@ def compute_rating(decisions: list[tuple["Finding", str, bool]]) -> tuple[str, f
     return "D", score, "\U0001f534", "#da3633"
 
 
+BLOCKING_SAST_CATEGORIES = frozenset({
+    "js/sql-injection", "js/code-injection", "js/command-line-injection",
+    "js/path-injection", "js/zipslip", "js/prototype-polluting-assignment",
+    "js/unsafe-deserialization", "js/xss", "js/xxe",
+    "js/server-side-unvalidated-url-redirection",
+    "security.sql-injection", "security.code-injection",
+    "javascript.lang.security.audit.code-string-concat",
+    "javascript.sequelize.security.audit.sequelize-raw-query",
+})
+
+
 def policy_decision(finding: Finding, stage: str, policy: dict) -> str:
     tool = finding.tool
     sev = finding.severity.lower()
     stage_policy = (policy.get("stages") or {}).get(stage) or {}
 
     if tool == "gitleaks":
-        return (stage_policy.get("secrets") or {}).get("any", "block")
+        secrets = stage_policy.get("secrets") or {}
+        if stage == "pr" and finding.confidence != "high":
+            return secrets.get("potential", "warn")
+        return secrets.get("verified", secrets.get("any", "block"))
 
     if tool in ("codeql", "semgrep"):
         sast = stage_policy.get("sast") or {}
+        is_blocking_rule = any(cat in finding.rule_id for cat in BLOCKING_SAST_CATEGORIES)
         if sev in ("critical", "high"):
             if stage == "pr":
-                return sast.get("high_critical_high_confidence_in_changed", "warn") if finding.in_changed_files else sast.get("high_critical_otherwise", "warn")
+                if finding.in_changed_files and is_blocking_rule:
+                    return sast.get("high_critical_high_confidence_in_changed", "block")
+                return sast.get("high_critical_otherwise", "warn")
             return sast.get("high_critical", "block")
         return sast.get("medium_low", "warn")
 
@@ -227,6 +281,8 @@ def policy_decision(finding: Finding, stage: str, policy: dict) -> str:
         sca = stage_policy.get("sca") or {}
         if stage == "pr":
             return sca.get("any", "warn")
+        if finding.dep_scope == "dev":
+            return sca.get("dev_test_or_no_fix", "warn")
         if sev in ("critical", "high") and finding.fix_available:
             return sca.get("critical_high_runtime_with_fix", "block")
         return sca.get("dev_test_or_no_fix", "warn")
@@ -367,7 +423,8 @@ def main() -> int:
     summary_lines = [
         f'<h1>{emoji} <span style="color:{color}; font-size:72px;">{grade}</span></h1>',
         "",
-        f"> **Security Rating: {grade}** &mdash; score **{score:.0f}** (A+\u2009=\u20090, D\u2009>\u2009150)",
+        f"> **Gate Pressure Score: {grade}** &mdash; score **{score:.0f}** (A+\u2009=\u20090, D\u2009>\u2009150)  ",
+        f"> _Not a risk quantification; tracks security debt and gate calibration._",
         "",
         f"**Stage:** {stage}  |  **Allow:** {len(allows)}  |  **Warn:** {len(warns)}  |  **Block:** {len(blocks)}",
         "",
@@ -410,14 +467,19 @@ def main() -> int:
         summary_lines.append(f"<details><summary>{emoji_t} <b>{label}</b></summary>")
         summary_lines.append("")
         if items:
-            summary_lines.append("| Severity | Rule/ID | Path | Line | Decision |")
-            summary_lines.append("|----------|---------|------|------|----------|")
+            has_conf = t == "gitleaks"
+            has_scope = t in ("trivy", "dependency-check")
+            extra_hdr = " Confidence |" if has_conf else (" Scope |" if has_scope else "")
+            summary_lines.append(f"| Severity | Rule/ID | Path | Line |{extra_hdr} Decision |")
+            sep_extra = "------------|" if (has_conf or has_scope) else ""
+            summary_lines.append(f"|----------|---------|------|------|{sep_extra}----------|")
             for f, dec, exc in items:
                 rule_short = (f.rule_id or "").replace("|", ",")[:45] + ("…" if len(f.rule_id or "") > 45 else "")
                 path_link = _gh_link(f)
                 line_str = str(f.line) if f.line else "-"
                 exc_s = " (exc)" if exc else ""
-                summary_lines.append(f"| {f.severity} | {rule_short} | {path_link} | {line_str} | {dec}{exc_s} |")
+                extra_col = f" {f.confidence} |" if has_conf else (f" {f.dep_scope} |" if has_scope else "")
+                summary_lines.append(f"| {f.severity} | {rule_short} | {path_link} | {line_str} |{extra_col} {dec}{exc_s} |")
         else:
             summary_lines.append("No findings.")
         summary_lines.append("")

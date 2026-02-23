@@ -1,10 +1,16 @@
 # Policy matrix: tool output -> decision (allow / warn / block) by stage
 # Stage: pr (pull_request) | release (push main, workflow_dispatch)
+#
+# Secrets: "verified" = known key pattern (AWS, GitHub PAT, etc.)
+#          "potential" = entropy / generic pattern (may be FP)
+# SAST:    block on PR only for high-confidence categories in changed files
+# SCA:     dev dependencies -> warn; runtime + fix available -> block on release
 
 stages:
   pr:
     secrets:
-      any: block
+      verified: block
+      potential: warn
     sast:
       high_critical_high_confidence_in_changed: block
       high_critical_otherwise: warn
@@ -19,7 +25,8 @@ stages:
 
   release:
     secrets:
-      any: block
+      verified: block
+      potential: block
     sast:
       high_critical: block
       medium_low: warn
