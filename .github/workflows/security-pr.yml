@@ -43,16 +43,9 @@ jobs:
         continue-on-error: true
         run: |
           python3 -m pip install --upgrade semgrep -q 2>/dev/null || pip install --upgrade semgrep -q 2>/dev/null || pipx install semgrep 2>/dev/null || true
-          semgrep scan --config auto --config security/semgrep.yml --sarif --output reports/semgrep.sarif . 2>/dev/null || true
+          semgrep scan --config auto --config security/semgrep.yml --sarif --output reports/semgrep.sarif --exclude reports . 2>/dev/null || true
           [ ! -f reports/semgrep.sarif ] && echo '{"runs":[]}' > reports/semgrep.sarif
         working-directory: ${{ github.workspace }}
-
-      - name: Upload Semgrep SARIF
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: semgrep-sarif
-          path: reports/semgrep.sarif
 
       # --- SCA: warn only on PR (Trivy latest) ---
       - name: Trivy FS (SCA)
@@ -64,13 +57,6 @@ jobs:
           [ ! -f reports/trivy.json ] && echo '{"Results":[]}' > reports/trivy.json
           exit 0
         working-directory: ${{ github.workspace }}
-
-      - name: Upload Trivy report
-        if: always() && hashFiles('reports/trivy.json') != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-json
-          path: reports/trivy.json
 
       # --- Dependency review ---
       - name: Dependency review
@@ -93,3 +79,10 @@ jobs:
             --stage pr \
             --export-latex docs/policy_mapping_table.tex
         working-directory: ${{ github.workspace }}
+
+      - name: Upload all security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports-pr
+          path: reports/

@@ -61,7 +61,7 @@ jobs:
         continue-on-error: true
         run: |
           python3 -m pip install --upgrade semgrep -q 2>/dev/null || pip install --upgrade semgrep -q 2>/dev/null || pipx install semgrep 2>/dev/null || true
-          semgrep scan --config auto --config security/semgrep.yml --sarif --output reports/semgrep.sarif . 2>/dev/null || true
+          semgrep scan --config auto --config security/semgrep.yml --sarif --output reports/semgrep.sarif --exclude reports . 2>/dev/null || true
           [ ! -f reports/semgrep.sarif ] && echo '{"runs":[]}' > reports/semgrep.sarif
         working-directory: ${{ github.workspace }}
 
@@ -102,12 +102,6 @@ jobs:
           args: >
             --failOnCVSS 0
             --exclude "**/test/files/**"
-
-      - name: Upload Trivy report
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-release-json
-          path: reports/
 
       # --- Container scan (if Dockerfile present) ---
       - name: Build image for scan
@@ -162,3 +156,10 @@ jobs:
             --exceptions security/exceptions.yml \
             --export-latex docs/policy_mapping_table.tex
         working-directory: ${{ github.workspace }}
+
+      - name: Upload all security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports-release
+          path: reports/
