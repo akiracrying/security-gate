@@ -119,7 +119,10 @@ def parse_sarif(path: Path) -> list[Finding]:
 def parse_dependency_check(path: Path) -> list[Finding]:
     findings = []
     data = load_json(path)
-    for dep in data.get("dependencies", []):
+    deps = data.get("dependencies", data.get("dependency", []))
+    if not isinstance(deps, list):
+        deps = []
+    for dep in deps:
         for vuln in dep.get("vulnerabilities", []) or []:
             sev = normalize_severity(vuln.get("severity", "medium"))
             name = vuln.get("name", vuln.get("cve", "CVE-?"))
@@ -287,30 +290,54 @@ def main() -> int:
     warns = [d for d in decisions if d[1] == "warn"]
     allows = [d for d in decisions if d[1] == "allow"]
 
+    tools_order = ["gitleaks", "codeql", "semgrep", "trivy", "dependency-check"]
+
     by_tool: dict[str, int] = {}
     for f, _, _ in decisions:
         by_tool[f.tool] = by_tool.get(f.tool, 0) + 1
-    tools_line = " | ".join(f"**{t}:** {c}" for t, c in sorted(by_tool.items())) if by_tool else "—"
+    by_tool_decision: dict[str, tuple[int, int, int]] = {}
+    for f, dec, _ in decisions:
+        if f.tool not in by_tool_decision:
+            by_tool_decision[f.tool] = (0, 0, 0)
+        a, w, b = by_tool_decision[f.tool]
+        if dec == "allow":
+            by_tool_decision[f.tool] = (a + 1, w, b)
+        elif dec == "warn":
+            by_tool_decision[f.tool] = (a, w + 1, b)
+        else:
+            by_tool_decision[f.tool] = (a, w, b + 1)
+
     summary_lines = [
         "# Security gate summary",
         "",
-        f"**Stage:** {stage}",
-        f"**Allow:** {len(allows)} | **Warn:** {len(warns)} | **Block:** {len(blocks)}",
+        f"**Stage:** {stage}  |  **Allow:** {len(allows)}  |  **Warn:** {len(warns)}  |  **Block:** {len(blocks)}",
         "",
-        "**By tool:** " + tools_line,
+        "## Counts by tool",
         "",
+        "| Tool | Allow | Warn | Block | Total |",
+        "|------|-------|------|-------|-------|",
     ]
-    if blocks:
-        summary_lines.append("## Blocked findings")
-        for f, _, exc in blocks:
-            summary_lines.append(f"- **{f.tool}** [{f.severity}] {f.rule_id}: {f.path}")
-        summary_lines.append("")
-    if warns:
-        summary_lines.append("## Warnings")
-        for f, _, exc in warns:
-            suffix = " (exception applied)" if exc else ""
-            summary_lines.append(f"- **{f.tool}** [{f.severity}] {f.rule_id}: {f.path}{suffix}")
-        summary_lines.append("")
+    for t in tools_order:
+        al, wa, bl = by_tool_decision.get(t, (0, 0, 0))
+        total = by_tool.get(t, 0)
+        summary_lines.append(f"| {t} | {al} | {wa} | {bl} | {total} |")
+    summary_lines.append("")
+
+    all_for_table = [(f, dec, exc) for f, dec, exc in (blocks + warns)]
+    max_rows = 80
+    summary_lines.append("## Findings (Tool | Severity | Rule/ID | Path | Decision)")
+    summary_lines.append("")
+    summary_lines.append("| Tool | Severity | Rule/ID | Path | Decision |")
+    summary_lines.append("|------|----------|---------|------|----------|")
+    for f, dec, exc in all_for_table[:max_rows]:
+        path_short = ((f.path or "").replace("|", "/")[:60]) + ("…" if len((f.path or "")) > 60 else "")
+        rule_short = ((f.rule_id or "").replace("|", ",")[:40]) + ("…" if len((f.rule_id or "")) > 40 else "")
+        exc_s = " (exception)" if exc else ""
+        summary_lines.append(f"| {f.tool} | {f.severity} | {rule_short} | {path_short} | {dec}{exc_s} |")
+    if len(all_for_table) > max_rows:
+        summary_lines.append(f"| … | … | … | _+{len(all_for_table) - max_rows} more_ | … |")
+    summary_lines.append("")
+
     exc_applied_list = [d for d in decisions if d[2]]
     if exc_applied_list:
         summary_lines.append("## Exceptions applied")

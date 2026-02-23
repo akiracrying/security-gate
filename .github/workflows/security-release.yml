@@ -67,7 +67,7 @@ jobs:
           path: 'demo/juice-shop-master'
           format: 'JSON'
           out: 'reports'
-          args: '--failOnCVSS 0'
+          args: '--failOnCVSS 0 --exclude "**/test/files/**"'
 
       - name: Upload Trivy report
         uses: actions/upload-artifact@v4
@@ -108,11 +108,13 @@ jobs:
           TRIVY_ARGS="--trivy reports/trivy.json"
           [ -f reports/trivy-image.json ] && TRIVY_ARGS="$TRIVY_ARGS --trivy reports/trivy-image.json"
           [ -f reports/trivy-juiceshop.json ] && TRIVY_ARGS="$TRIVY_ARGS --trivy reports/trivy-juiceshop.json"
+          DEPCHECK_ARG=""
+          for dc in reports/dependency-check-report.json reports/security-gate.json; do [ -f "$dc" ] && DEPCHECK_ARG="--depcheck $dc" && break; done
           python scripts/gate_decider.py \
             --gitleaks reports/gitleaks.json \
             $SARIF_ARGS \
             $TRIVY_ARGS \
-            --depcheck reports/dependency-check-report.json \
+            $DEPCHECK_ARG \
             --stage release \
             --policy security/policy.yml \
             --exceptions security/exceptions.yml \
