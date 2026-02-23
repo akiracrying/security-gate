@@ -180,6 +180,29 @@ def get_stage() -> str:
     return "pr"
 
 
+SEVERITY_WEIGHT = {"critical": 10, "high": 5, "medium": 2, "low": 1, "info": 0}
+
+
+def compute_rating(decisions: list[tuple["Finding", str, bool]]) -> tuple[str, float, str, str]:
+    """Return (grade, score, emoji, hex_color)."""
+    score = 0.0
+    for f, dec, _ in decisions:
+        w = SEVERITY_WEIGHT.get(f.severity.lower(), 1)
+        if dec == "block":
+            score += w
+        elif dec == "warn":
+            score += 0.5
+    if score == 0:
+        return "A+", score, "\U0001f7e2", "#2ea043"
+    if score <= 10:
+        return "A", score, "\U0001f7e2", "#2ea043"
+    if score <= 50:
+        return "B", score, "\U0001f7e1", "#d29922"
+    if score <= 150:
+        return "C", score, "\U0001f7e0", "#e3883e"
+    return "D", score, "\U0001f534", "#da3633"
+
+
 def policy_decision(finding: Finding, stage: str, policy: dict) -> str:
     tool = finding.tool
     sev = finding.severity.lower()
@@ -335,8 +358,12 @@ def main() -> int:
         else:
             by_tool_decision[f.tool] = (a, w, b + 1)
 
+    grade, score, emoji, color = compute_rating(decisions)
+
     summary_lines = [
-        "# Security gate summary",
+        f'<h1>{emoji} <span style="color:{color}; font-size:72px;">{grade}</span></h1>',
+        "",
+        f"> **Security Rating: {grade}** &mdash; score **{score:.0f}** (A+\u2009=\u20090, D\u2009>\u2009150)",
         "",
         f"**Stage:** {stage}  |  **Allow:** {len(allows)}  |  **Warn:** {len(warns)}  |  **Block:** {len(blocks)}",
         "",
