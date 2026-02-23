@@ -28,6 +28,7 @@ class Finding:
     severity: str  # critical, high, medium, low, info
     path: str
     message: str
+    line: int = 0
     fix_available: bool = False
     in_changed_files: bool = True
     raw: dict[str, Any] = field(default_factory=dict)
@@ -73,8 +74,9 @@ def parse_gitleaks(path: Path) -> list[Finding]:
                 tool="gitleaks",
                 rule_id=rule,
                 severity="high",
-                path=r.get("File", r.get("SourceMetadata", {}).get("Data", {}).get("File", r.get("file", ""))),
+                path=r.get("File", r.get("SourceMetadata", {}).get("Data", {}).get("file", "")),
                 message=r.get("Description", "Secret detected"),
+                line=r.get("StartLine", 0),
                 fix_available=False,
                 in_changed_files=True,
                 raw=r,
@@ -98,6 +100,7 @@ def parse_sarif(path: Path) -> list[Finding]:
             )
             loc = (result.get("locations") or [{}])[0].get("physicalLocation", {}) or {}
             loc_path = (loc.get("artifactLocation", {}) or {}).get("uri", "")
+            loc_line = (loc.get("region") or {}).get("startLine", 0)
             message = (result.get("message", {}).get("text") or result.get("message", {}).get("markdown") or str(result.get("message", "Finding")))
             if isinstance(message, dict):
                 message = message.get("text", str(message))
@@ -108,6 +111,7 @@ def parse_sarif(path: Path) -> list[Finding]:
                     severity=severity,
                     path=loc_path,
                     message=message[:200],
+                    line=loc_line,
                     fix_available=False,
                     in_changed_files=True,
                     raw=result,
@@ -378,26 +382,56 @@ def main() -> int:
         summary_lines.append(f"| {t} | {al} | {wa} | {bl} | {total} |")
     summary_lines.append("")
 
-    all_for_table = [(f, dec, exc) for f, dec, exc in (blocks + warns)]
-    max_rows = 80
-    summary_lines.append("## Findings (Tool | Severity | Rule/ID | Path | Decision)")
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    sha = os.environ.get("GITHUB_SHA", "main")
+    base_url = f"https://github.com/{repo}/blob/{sha}" if repo else ""
+
+    def _gh_link(f: Finding) -> str:
+        p = (f.path or "").replace("|", "/")
+        if not base_url or not p or p.startswith("http") or "/" not in p:
+            return p[:70] + ("…" if len(p) > 70 else "")
+        short = p[:60] + ("…" if len(p) > 60 else "")
+        anchor = f"#L{f.line}" if f.line else ""
+        return f"[{short}]({base_url}/{p}{anchor})"
+
+    by_tool_findings: dict[str, list[tuple[Finding, str, bool]]] = {}
+    for f, dec, exc in decisions:
+        if dec in ("block", "warn"):
+            by_tool_findings.setdefault(f.tool, []).append((f, dec, exc))
+
+    summary_lines.append("## Findings")
     summary_lines.append("")
-    summary_lines.append("| Tool | Severity | Rule/ID | Path | Decision |")
-    summary_lines.append("|------|----------|---------|------|----------|")
-    for f, dec, exc in all_for_table[:max_rows]:
-        path_short = ((f.path or "").replace("|", "/")[:60]) + ("…" if len((f.path or "")) > 60 else "")
-        rule_short = ((f.rule_id or "").replace("|", ",")[:40]) + ("…" if len((f.rule_id or "")) > 40 else "")
-        exc_s = " (exception)" if exc else ""
-        summary_lines.append(f"| {f.tool} | {f.severity} | {rule_short} | {path_short} | {dec}{exc_s} |")
-    if len(all_for_table) > max_rows:
-        summary_lines.append(f"| … | … | … | _+{len(all_for_table) - max_rows} more_ | … |")
-    summary_lines.append("")
+    for t in tools_order:
+        items = by_tool_findings.get(t, [])
+        blk = sum(1 for _, d, _ in items if d == "block")
+        wrn = sum(1 for _, d, _ in items if d == "warn")
+        label = f"{t}: {blk} block, {wrn} warn" if items else f"{t}: clean"
+        emoji_t = "\U0001f534" if blk else ("\U0001f7e1" if wrn else "\u2705")
+        summary_lines.append(f"<details><summary>{emoji_t} <b>{label}</b></summary>")
+        summary_lines.append("")
+        if items:
+            summary_lines.append("| Severity | Rule/ID | Path | Line | Decision |")
+            summary_lines.append("|----------|---------|------|------|----------|")
+            for f, dec, exc in items:
+                rule_short = (f.rule_id or "").replace("|", ",")[:45] + ("…" if len(f.rule_id or "") > 45 else "")
+                path_link = _gh_link(f)
+                line_str = str(f.line) if f.line else "-"
+                exc_s = " (exc)" if exc else ""
+                summary_lines.append(f"| {f.severity} | {rule_short} | {path_link} | {line_str} | {dec}{exc_s} |")
+        else:
+            summary_lines.append("No findings.")
+        summary_lines.append("")
+        summary_lines.append("</details>")
+        summary_lines.append("")
 
     exc_applied_list = [d for d in decisions if d[2]]
     if exc_applied_list:
-        summary_lines.append("## Exceptions applied")
+        summary_lines.append("<details><summary>\U0001f6e1\ufe0f <b>Exceptions applied</b></summary>")
+        summary_lines.append("")
         for f, _, _ in exc_applied_list:
             summary_lines.append(f"- {f.tool} / {f.rule_id} in {f.path}")
+        summary_lines.append("")
+        summary_lines.append("</details>")
         summary_lines.append("")
 
     summary_md = "\n".join(summary_lines)
